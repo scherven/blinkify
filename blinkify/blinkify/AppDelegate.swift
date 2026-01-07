@@ -8,7 +8,7 @@
 import UIKit
 
 class AppDelegate: NSObject, UIApplicationDelegate {
-    private let serverURL = "https://your-ngrok-url.ngrok.io/api/device-token"
+    private let serverURL = "https://04f85cb0ac48.ngrok-free.app/api/device-token"
         
     func application(_ application: UIApplication,
                     didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {

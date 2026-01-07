@@ -1,18 +1,19 @@
-from flask import Flask, jsonify
+from flask import Flask, request, jsonify
 import requests
 import threading
 import time
 import csv
 import os
+import json
 from datetime import datetime
 from typing import Optional, Tuple
 
 app = Flask(__name__)
 
 # Configuration
-API_KEY = "YOUR_GOOGLE_PLACES_API_KEY"  # Replace with your actual API key
-PLACE_ID = "YOUR_PLACE_ID"  # Replace with the station's place ID
-CHECK_INTERVAL = 300  # 5 minutes in seconds
+API_KEY = open("key.key").read() 
+PLACE_ID = "ChIJlf0s_HFLtokRRa9H_ouBaLM" 
+CHECK_INTERVAL = 300 
 CSV_FILE = "station_availability.csv"
 
 # Global state
@@ -169,6 +170,7 @@ def register_device_token():
             return jsonify({'error': 'device_token is required'}), 400
         
         device_token = data['device_token']
+        print(device_token)
         
         # Load existing tokens
         tokens = load_tokens()
@@ -216,4 +218,4 @@ if __name__ == '__main__':
     log_to_csv(available, available_count, total_count, update_time, error)
     
     # Start Flask app
-    app.run(host='0.0.0.0', port=5000, debug=False)
+    app.run(host='0.0.0.0', port=5121, debug=False)
