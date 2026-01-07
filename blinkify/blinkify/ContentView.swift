@@ -16,6 +16,7 @@ struct ContentView: View {
     
     private var placeId = "ChIJlf0s_HFLtokRRa9H_ouBaLM"
     private var apiKey = Key.key
+    private var center = UNUserNotificationCenter.current()
     
     var body: some View {
             GeometryReader { geometry in
@@ -75,6 +76,12 @@ struct ContentView: View {
         }
         
         func refresh() async {
+            do {
+                try await center.requestAuthorization(options: [.alert, .sound, .badge])
+            } catch {
+                // Handle the error here.
+            }
+            
             guard !isLoading else { return }
             isLoading = true
             
