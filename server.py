@@ -5,6 +5,9 @@ import time
 import csv
 import os
 import json
+import jwt
+import httpx
+import uuid
 from datetime import datetime
 from typing import Optional, Tuple
 
@@ -13,8 +16,10 @@ app = Flask(__name__)
 # Configuration
 API_KEY = open("key.key").read() 
 PLACE_ID = "ChIJlf0s_HFLtokRRa9H_ouBaLM" 
-CHECK_INTERVAL = 300 
+CHECK_INTERVAL = 120 
 CSV_FILE = "station_availability.csv"
+NOTIFICATION_SERVER = "api.sandbox.push.apple.com:443"
+DEVICE_TOKEN = "c0d33fed8655316b4046394091ede6ec9478f16fd9fdd6111d7a6dc877753379"
 
 # Global state
 station_status = {
@@ -96,9 +101,34 @@ def background_checker():
     """Background thread that checks station availability every 5 minutes."""
     global station_status
     
+    # Track the last availability state
+    last_available = None
+    
     while True:
         print(f"Checking station availability at {datetime.now()}")
         available, update_time, error, available_count, total_count = check_station_availability(PLACE_ID)
+        
+        # Check if status changed from unavailable to available
+        if (not last_available) and available:
+            print("Charger is now available! Sending notification...")
+            try:
+                # Generate JWT token
+                jwt_token = generate_apns_token()
+                
+                # Send push notification
+                status_code, response, apns_id = send_apns_notification(
+                    device_token=DEVICE_TOKEN,
+                    alert_message='Charger is now available',
+                    jwt_token=jwt_token,
+                    sandbox=True
+                )
+                
+                print(f"Notification sent - Status: {status_code}, APNs ID: {apns_id}")
+            except Exception as e:
+                print(f"Failed to send notification: {e}")
+        
+        # Update the last available state
+        last_available = available
         
         station_status.update({
             "available": available,
@@ -111,7 +141,6 @@ def background_checker():
         log_to_csv(available, available_count, total_count, update_time, error)
         
         time.sleep(CHECK_INTERVAL)
-
 @app.route('/status', methods=['GET'])
 def get_status():
     """Get the current availability status of the charging station."""
@@ -195,6 +224,84 @@ def register_device_token():
     except Exception as e:
         print(f"Error: {str(e)}")
         return jsonify({'error': str(e)}), 500
+
+def generate_apns_token(key_id_file='key.id', p8_file='AuthKey.p8', team_id='SM7F898GQH'):
+    # Read the Key ID from file
+    with open(key_id_file, 'r') as f:
+        key_id = f.read().strip()
+    
+    # Read the private key from .p8 file
+    with open(p8_file, 'r') as f:
+        private_key = f.read()
+    
+    # Create the token headers
+    headers = {
+        'alg': 'ES256',
+        'kid': key_id
+    }
+    
+    # Create the token payload
+    payload = {
+        'iss': team_id,
+        'iat': int(time.time())
+    }
+    
+    # Generate the JWT token
+    token = jwt.encode(
+        payload,
+        private_key,
+        algorithm='ES256',
+        headers=headers
+    )
+    
+    return token
+
+def send_apns_notification(device_token, alert_message, jwt_token, 
+                          bundle_id='com.technaplex.blinkify',
+                          sandbox=True,
+                          apns_priority=10,
+                          apns_expiration=0,
+                          apns_id=None):
+    # Determine the APNs server
+    host = 'api.sandbox.push.apple.com' if sandbox else 'api.push.apple.com'
+    port = 443
+    
+    # Build the URL path with device token
+    path = f'/3/device/{device_token}'
+    url = f'https://{host}:{port}{path}'
+    
+    # Generate apns-id if not provided
+    if apns_id is None:
+        apns_id = str(uuid.uuid4())
+    
+    # Build headers
+    headers = {
+        'authorization': f'bearer {jwt_token}',
+        'apns-id': apns_id,
+        'apns-push-type': 'alert',
+        'apns-expiration': str(apns_expiration),
+        'apns-priority': str(apns_priority),
+        'apns-topic': bundle_id
+    }
+    
+    # Build the payload
+    payload = {
+        'aps': {
+            'alert': alert_message
+        }
+    }
+    
+    # Send the notification using HTTP/2
+    with httpx.Client(http2=True) as client:
+        response = client.post(
+            url,
+            headers=headers,
+            json=payload,
+            timeout=10.0
+        )
+    
+    return response.status_code, response.text, apns_id
+
 
 if __name__ == '__main__':
     # Initialize CSV file
